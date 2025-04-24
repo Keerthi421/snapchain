@@ -509,4 +509,39 @@ mod tests {
         assert_eq!(result.len(), 1); // Only the first cast should be received
         assert_eq!(result[0].fid(), 1234);
     }
+
+    #[test]
+    fn test_messages_ordered_by_ts_hash() {
+        let mut message1 = proto::Message::default();
+        let mut message2 = proto::Message::default();
+        
+        // Create two messages with same timestamp but different hashes
+        let mut data1 = proto::MessageData::default();
+        data1.timestamp = 100;
+        message1.data = Some(data1);
+        
+        let mut data2 = proto::MessageData::default();
+        data2.timestamp = 100;
+        message2.data = Some(data2);
+        
+        // Set different hashes
+        message1.hash = vec![1; 20];
+        message2.hash = vec![2; 20];
+        
+        // Get the mempool keys and compare
+        let key1 = message1.mempool_key();
+        let key2 = message2.mempool_key();
+        
+        // Even though timestamps are the same, the keys should be different due to different hashes
+        // And they should be ordered by the tsHash which combines timestamp and hash
+        assert_ne!(key1.identity, key2.identity);
+        
+        // Verify proper ordering with BTreeMap
+        let mut ordered_map = std::collections::BTreeMap::new();
+        ordered_map.insert(key1.clone(), "message1");
+        ordered_map.insert(key2.clone(), "message2");
+        
+        // First entry should be message1 since it has lower hash value
+        assert_eq!(ordered_map.values().next().unwrap(), &"message1");
+    }
 }

@@ -167,7 +167,18 @@ impl MempoolKey {
 impl proto::Message {
     pub fn mempool_key(&self) -> MempoolKey {
         if let Some(data) = &self.data {
-            // TODO: Consider revisiting choice of timestamp here as backdated messages currently are prioritized.
+            // Create tsHash to use for ordering
+            if let Ok(ts_hash) = make_ts_hash(data.timestamp, &self.hash) {
+                // Use the entire tsHash as part of the identity to ensure strict ordering by tsHash
+                // This ensures messages in a block are ordered by tsHash
+                let ts_hash_hex = hex::encode(ts_hash);
+                return MempoolKey::new(
+                    MempoolMessageKind::UserMessage,
+                    farcaster_time_to_unix_seconds(data.timestamp as u64),
+                    ts_hash_hex,
+                );
+            }
+            // Fall back to previous behavior if tsHash creation fails
             return MempoolKey::new(
                 MempoolMessageKind::UserMessage,
                 farcaster_time_to_unix_seconds(data.timestamp as u64),
@@ -182,18 +193,26 @@ impl proto::ValidatorMessage {
     pub fn mempool_key(&self) -> MempoolKey {
         if let Some(fname) = &self.fname_transfer {
             if let Some(proof) = &fname.proof {
+                // Create a more stable identity by combining timestamp and name
+                let identity = format!("{:010}_{}", proof.timestamp, fname.id.to_string());
                 return MempoolKey::new(
                     MempoolMessageKind::ValidatorMessage,
                     proof.timestamp,
-                    fname.id.to_string(),
+                    identity,
                 );
             }
         }
         if let Some(event) = &self.on_chain_event {
+            // Create a more stable identity by combining timestamp and transaction hash
+            let identity = format!("{:010}_{}{}", 
+                event.block_timestamp, 
+                hex::encode(&event.transaction_hash), 
+                event.log_index.to_string()
+            );
             return MempoolKey::new(
                 MempoolMessageKind::ValidatorMessage,
                 event.block_timestamp,
-                hex::encode(&event.transaction_hash) + &event.log_index.to_string(),
+                identity,
             );
         }
         todo!();
